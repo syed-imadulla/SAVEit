@@ -46,19 +46,52 @@ export enum ResourceVerificationStatus {
   NEEDS_REVIEW = 'needs_review',
 }
 
+export interface IEvidenceReference {
+  targetType: 'keyPoint' | 'resource';
+  targetIndex: number;
+  targetText?: string;
+  sourceType: 'transcript' | 'ocr' | 'metadata';
+  timestampMs?: number;
+  timestampSeconds?: number;
+  excerpt: string;
+  frameIndex?: number;
+}
+
+export interface ITranscriptSegment {
+  start: number;
+  duration: number;
+  text: string;
+}
+
 export interface IResource {
   name: string;
   url?: string;
   type: ResourceType;
   verificationStatus: ResourceVerificationStatus;
   description?: string;
+  evidence?: IEvidenceReference;
+}
+
+export interface IOcrObservation {
+  frameIndex: number;
+  timestampMs: number;
+  rawText: string;
+  codeSnippets?: string[];
+  terminalCommands?: string[];
+  urls?: string[];
+  toolMentions?: string[];
+  confidenceScore?: number;
 }
 
 export interface IRawEvidence {
   transcript?: string;
+  transcriptSegments?: ITranscriptSegment[];
   captions?: string;
   ocrText?: string;
+  ocrObservations?: IOcrObservation[];
+  evidenceAttributions?: IEvidenceReference[];
   notes?: string;
+  failureReason?: string;
 }
 
 export interface IItem extends Document {
@@ -85,6 +118,37 @@ export interface IItem extends Document {
   updatedAt: Date;
 }
 
+const EvidenceReferenceSchema = new Schema<IEvidenceReference>(
+  {
+    targetType: {
+      type: String,
+      enum: ['keyPoint', 'resource'],
+      required: true,
+    },
+    targetIndex: { type: Number, required: true },
+    targetText: { type: String },
+    sourceType: {
+      type: String,
+      enum: ['transcript', 'ocr', 'metadata'],
+      required: true,
+    },
+    timestampMs: { type: Number },
+    timestampSeconds: { type: Number },
+    excerpt: { type: String, required: true },
+    frameIndex: { type: Number },
+  },
+  { _id: false }
+);
+
+const TranscriptSegmentSchema = new Schema<ITranscriptSegment>(
+  {
+    start: { type: Number, required: true },
+    duration: { type: Number, required: true },
+    text: { type: String, required: true },
+  },
+  { _id: false }
+);
+
 const ResourceSchema = new Schema<IResource>(
   {
     name: { type: String, required: true, trim: true },
@@ -100,6 +164,21 @@ const ResourceSchema = new Schema<IResource>(
       default: ResourceVerificationStatus.UNVERIFIED_MENTION,
     },
     description: { type: String, trim: true },
+    evidence: { type: EvidenceReferenceSchema },
+  },
+  { _id: false }
+);
+
+const OcrObservationSchema = new Schema<IOcrObservation>(
+  {
+    frameIndex: { type: Number, required: true },
+    timestampMs: { type: Number, required: true },
+    rawText: { type: String, required: true },
+    codeSnippets: [{ type: String }],
+    terminalCommands: [{ type: String }],
+    urls: [{ type: String }],
+    toolMentions: [{ type: String }],
+    confidenceScore: { type: Number },
   },
   { _id: false }
 );
@@ -107,9 +186,13 @@ const ResourceSchema = new Schema<IResource>(
 const RawEvidenceSchema = new Schema<IRawEvidence>(
   {
     transcript: { type: String },
+    transcriptSegments: [TranscriptSegmentSchema],
     captions: { type: String },
     ocrText: { type: String },
+    ocrObservations: [OcrObservationSchema],
+    evidenceAttributions: [EvidenceReferenceSchema],
     notes: { type: String },
+    failureReason: { type: String },
   },
   { _id: false }
 );

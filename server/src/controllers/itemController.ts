@@ -17,11 +17,16 @@ import {
   LinkVerifier,
   ExtractedResource,
 } from '../services/intelligence';
+import {
+  defaultMultimodalService,
+  MultimodalService,
+} from '../services/multimodal';
 
 // Active service instances allowing dependency injection for integration testing
 let activeRetrievalService: RetrievalService = defaultRetrievalService;
 let activeStructuringService: StructuringService = defaultStructuringService;
 let activeLinkVerifier: LinkVerifier = defaultLinkVerifier;
+let activeMultimodalService: MultimodalService = defaultMultimodalService;
 
 export function setRetrievalService(service: RetrievalService): void {
   activeRetrievalService = service;
@@ -39,9 +44,18 @@ export function setLinkVerifier(verifier: LinkVerifier): void {
   activeLinkVerifier = verifier;
 }
 
+export function setMultimodalService(service: MultimodalService): void {
+  activeMultimodalService = service;
+}
+
+export function resetMultimodalService(): void {
+  activeMultimodalService = defaultMultimodalService;
+}
+
 export function resetIntelligenceServices(): void {
   activeStructuringService = defaultStructuringService;
   activeLinkVerifier = defaultLinkVerifier;
+  activeMultimodalService = defaultMultimodalService;
 }
 
 function mapExtractedResource(r: ExtractedResource): IResource {
@@ -126,6 +140,7 @@ export async function createItem(req: Request, res: Response): Promise<void> {
         item.rawEvidence = {
           ...item.rawEvidence,
           transcript: report.transcript.text,
+          transcriptSegments: report.transcript.segments,
         };
       }
 
@@ -136,27 +151,85 @@ export async function createItem(req: Request, res: Response): Promise<void> {
       }
       item.analyzedAt = report.retrievedAt;
 
-      // 3. Trigger text structuring and link verification if text is present
+      // Check for optional audio/video media supplied in request body
+      const audioBuf = req.body?.audioBase64
+        ? Buffer.from(req.body.audioBase64, 'base64')
+        : (req.body?.audioBuffer instanceof Buffer ? req.body.audioBuffer : undefined);
+      const mediaFilePath = typeof req.body?.mediaFilePath === 'string' ? req.body.mediaFilePath : undefined;
+
+      // Execute multimodal pipeline (STT if native captions absent, keyframe OCR if mediaFilePath provided)
+      if (audioBuf || mediaFilePath || item.rawEvidence?.transcript) {
+        try {
+          const mmResult = await activeMultimodalService.processMultimodal({
+            url: item.url,
+            platform: item.platform,
+            existingTranscript: item.rawEvidence?.transcript,
+            existingSegments: item.rawEvidence?.transcriptSegments,
+            audioBuffer: audioBuf,
+            mediaFilePath: mediaFilePath,
+            title: item.title,
+            author: item.author,
+          });
+
+          if (mmResult.transcriptText) {
+            item.rawEvidence = {
+              ...item.rawEvidence,
+              transcript: mmResult.transcriptText,
+              transcriptSegments: mmResult.transcriptSegments,
+            };
+          }
+          if (mmResult.ocrText) {
+            item.rawEvidence = {
+              ...item.rawEvidence,
+              ocrText: mmResult.ocrText,
+              ocrObservations: mmResult.ocrObservations,
+            };
+          }
+        } catch (mmErr: any) {
+          console.warn('[ItemController] Multimodal processing failed non-fatally:', mmErr.message);
+        }
+      }
+
+      // 3. Trigger text structuring and link verification if transcript or OCR text is present
       try {
         const textToAnalyze = item.rawEvidence?.transcript || '';
+        const ocrToAnalyze = item.rawEvidence?.ocrText || '';
         const structResult = await activeStructuringService.structure({
           title: item.title,
           author: item.author,
           platform: item.platform,
           rawText: textToAnalyze,
+          ocrText: ocrToAnalyze,
         });
 
         // Verify discovered links with SSRF protection
         const verifiedResources = await activeLinkVerifier.verifyResources(structResult.knowledge.resources);
+        const mappedResources = verifiedResources.map(mapExtractedResource);
+
+        // Grounding: Connect takeaways and resources to verifiable transcript & OCR evidence
+        const groundingResult = activeMultimodalService.groundKnowledge({
+          keyPoints: structResult.knowledge.keyPoints,
+          resources: mappedResources,
+          transcriptSegments: item.rawEvidence?.transcriptSegments,
+          ocrObservations: item.rawEvidence?.ocrObservations,
+          metadata: {
+            title: item.title,
+            author: item.author,
+          },
+        });
 
         if (structResult.knowledge.summary) item.summary = structResult.knowledge.summary;
         if (structResult.knowledge.keyPoints.length > 0) item.keyPoints = structResult.knowledge.keyPoints;
         if (structResult.knowledge.tags.length > 0) item.tags = structResult.knowledge.tags;
-        item.resources = verifiedResources.map(mapExtractedResource);
+        item.resources = groundingResult.groundedResources;
+        item.rawEvidence = {
+          ...item.rawEvidence,
+          evidenceAttributions: groundingResult.attributions,
+        };
         item.structuredAt = new Date();
 
-        // Promote to fully_analyzed if both metadata and transcript were structured
-        if (structResult.success && item.rawEvidence?.transcript) {
+        // Promote to fully_analyzed if both metadata and content (transcript or OCR) were structured
+        if (structResult.success && (item.rawEvidence?.transcript || item.rawEvidence?.ocrText)) {
           item.status = ProcessingStatus.FULLY_ANALYZED;
         } else if (!structResult.success && structResult.errorCode && structResult.errorCode !== 'INSUFFICIENT_TEXT') {
           item.failureReason = structResult.error || 'AI structuring failed';
@@ -320,24 +393,81 @@ export async function analyzeItem(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    // Check for optional audio/video media supplied in request body
+    const audioBuf = req.body?.audioBase64
+      ? Buffer.from(req.body.audioBase64, 'base64')
+      : (req.body?.audioBuffer instanceof Buffer ? req.body.audioBuffer : undefined);
+    const mediaFilePath = typeof req.body?.mediaFilePath === 'string' ? req.body.mediaFilePath : undefined;
+
+    if (audioBuf || mediaFilePath) {
+      try {
+        const mmResult = await activeMultimodalService.processMultimodal({
+          url: item.url,
+          platform: item.platform,
+          existingTranscript: item.rawEvidence?.transcript,
+          existingSegments: item.rawEvidence?.transcriptSegments,
+          audioBuffer: audioBuf,
+          mediaFilePath: mediaFilePath,
+          title: item.title,
+          author: item.author,
+        });
+
+        if (mmResult.transcriptText) {
+          item.rawEvidence = {
+            ...item.rawEvidence,
+            transcript: mmResult.transcriptText,
+            transcriptSegments: mmResult.transcriptSegments,
+          };
+        }
+        if (mmResult.ocrText) {
+          item.rawEvidence = {
+            ...item.rawEvidence,
+            ocrText: mmResult.ocrText,
+            ocrObservations: mmResult.ocrObservations,
+          };
+        }
+      } catch (mmErr: any) {
+        console.warn('[ItemController] Re-analysis multimodal processing failed non-fatally:', mmErr.message);
+      }
+    }
+
     const textToAnalyze = item.rawEvidence?.transcript || '';
+    const ocrToAnalyze = item.rawEvidence?.ocrText || '';
     const structResult = await activeStructuringService.structure({
       title: item.title,
       author: item.author,
       platform: item.platform,
       rawText: textToAnalyze,
+      ocrText: ocrToAnalyze,
     });
 
     // Verify candidate URLs with SSRF protection
     const verifiedResources = await activeLinkVerifier.verifyResources(structResult.knowledge.resources);
+    const mappedResources = verifiedResources.map(mapExtractedResource);
+
+    // Grounding: Connect takeaways and resources to verifiable transcript & OCR evidence
+    const groundingResult = activeMultimodalService.groundKnowledge({
+      keyPoints: structResult.knowledge.keyPoints,
+      resources: mappedResources,
+      transcriptSegments: item.rawEvidence?.transcriptSegments,
+      ocrObservations: item.rawEvidence?.ocrObservations,
+      metadata: {
+        title: item.title,
+        author: item.author,
+      },
+    });
 
     if (structResult.knowledge.summary) item.summary = structResult.knowledge.summary;
     item.keyPoints = structResult.knowledge.keyPoints;
     if (structResult.knowledge.tags.length > 0) item.tags = structResult.knowledge.tags;
-    item.resources = verifiedResources.map(mapExtractedResource);
+    item.resources = groundingResult.groundedResources;
+    item.rawEvidence = {
+      ...item.rawEvidence,
+      evidenceAttributions: groundingResult.attributions,
+    };
     item.structuredAt = new Date();
 
-    if (structResult.success && item.rawEvidence?.transcript) {
+    if (structResult.success && (item.rawEvidence?.transcript || item.rawEvidence?.ocrText)) {
       item.status = ProcessingStatus.FULLY_ANALYZED;
       item.failureReason = undefined;
     } else if (!structResult.success) {

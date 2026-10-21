@@ -15,6 +15,7 @@ export interface StructuringInput {
   platform: string;
   rawText?: string;
   description?: string;
+  ocrText?: string;
 }
 
 export interface StructuringResult {
@@ -51,7 +52,13 @@ export class StructuringService {
    * Never throws unhandled errors — guarantees clean fallback and honest reporting.
    */
   async structure(input: StructuringInput): Promise<StructuringResult> {
-    const rawContent = [input.rawText, input.description].filter(Boolean).join('\n\n');
+    const rawContent = [
+      input.rawText,
+      input.ocrText ? `[On-Screen Visual Text & Code]\n${input.ocrText}` : undefined,
+      input.description,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
     const cleanedText = cleanTranscriptText(rawContent);
 
     // Heuristically extract any candidate URLs, GitHub repos, or known tools from text & description

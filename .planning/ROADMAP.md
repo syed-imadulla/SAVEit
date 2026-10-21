@@ -6,10 +6,10 @@ SAVEit transforms ephemeral short-form video feeds into an organized personal kn
 
 ## Phases
 
-- [ ] **Phase 1: Core Foundation & URL Capture** - Full monorepo setup, Docker MongoDB, resilient URL capture API, honest status model, responsive UI shell, and saved-items library.
-- [ ] **Phase 2: Retrieval Feasibility & Adapters** - Benchmark representative public Reels/Shorts, modular retrieval interface, graceful fallback to metadata.
-- [ ] **Phase 3: Text-First Intelligence & Structuring** - Summaries, key takeaways, resource mention extraction, and link verification for accessible transcripts.
-- [ ] **Phase 4: Multimodal Analysis (STT & OCR)** - Speech-to-text, frame sampling, on-screen text/code OCR, and evidence attribution.
+- [x] **Phase 1: Core Foundation & URL Capture** - Full monorepo setup, Docker MongoDB, resilient URL capture API, honest status model, responsive UI shell, and saved-items library.
+- [x] **Phase 2: Retrieval Feasibility & Adapters** - Benchmark representative public Reels/Shorts, modular retrieval interface, graceful fallback to metadata.
+- [x] **Phase 3: Text-First Intelligence & Structuring** - Summaries, key takeaways, resource mention extraction, and link verification for accessible transcripts.
+- [x] **Phase 4: Multimodal Analysis (STT & OCR)** - Speech-to-text, frame sampling, on-screen text/code OCR, and evidence attribution.
 - [ ] **Phase 5: Search & Knowledge Discovery** - Full-text search across summaries/tools/tags, filtering, and comprehensive detail view.
 - [ ] **Phase 6: Background Processing & Queues** - Redis + BullMQ asynchronous queues, job retries, and live client updates.
 - [ ] **Phase 7: Hardening, Security & Export** - Rate limits, SSRF hardening, data retention controls, and PWA share target.
@@ -62,7 +62,10 @@ Plans:
   1. Spoken audio transcribed with timestamps using an efficient open-source or API STT engine.
   2. Informative keyframes sampled and scanned with OCR to capture on-screen terminal commands and code.
   3. User can inspect the exact evidence (timestamp, frame snippet, or text excerpt) supporting each takeaway.
-**Plans**: TBD
+**Plans**: 3 plans (all completed)
+- [x] 04-01: Media Accessibility & STT Feasibility Benchmark
+- [x] 04-02: Keyframe Sampling & On-Screen OCR Engine
+- [x] 04-03: Multimodal Pipeline Integration & Evidence Attribution
 
 ### Phase 5: Search & Knowledge Discovery
 **Goal**: Enable users to quickly retrieve saved knowledge using keywords, tools, or natural language.
