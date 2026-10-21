@@ -1,11 +1,27 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
-import { Item, ProcessingStatus, Platform } from '../models/Item';
+import {
+  Item,
+  ProcessingStatus,
+  Platform,
+  IResource,
+  ResourceType,
+  ResourceVerificationStatus,
+} from '../models/Item';
 import { validateAndParseVideoUrl } from '../utils/urlValidator';
 import { defaultRetrievalService, RetrievalService } from '../services/retrieval';
+import {
+  defaultStructuringService,
+  StructuringService,
+  defaultLinkVerifier,
+  LinkVerifier,
+  ExtractedResource,
+} from '../services/intelligence';
 
-// Active service instance allowing dependency injection for integration testing
+// Active service instances allowing dependency injection for integration testing
 let activeRetrievalService: RetrievalService = defaultRetrievalService;
+let activeStructuringService: StructuringService = defaultStructuringService;
+let activeLinkVerifier: LinkVerifier = defaultLinkVerifier;
 
 export function setRetrievalService(service: RetrievalService): void {
   activeRetrievalService = service;
@@ -13,6 +29,39 @@ export function setRetrievalService(service: RetrievalService): void {
 
 export function resetRetrievalService(): void {
   activeRetrievalService = defaultRetrievalService;
+}
+
+export function setStructuringService(service: StructuringService): void {
+  activeStructuringService = service;
+}
+
+export function setLinkVerifier(verifier: LinkVerifier): void {
+  activeLinkVerifier = verifier;
+}
+
+export function resetIntelligenceServices(): void {
+  activeStructuringService = defaultStructuringService;
+  activeLinkVerifier = defaultLinkVerifier;
+}
+
+function mapExtractedResource(r: ExtractedResource): IResource {
+  let verificationStatus = ResourceVerificationStatus.UNVERIFIED_MENTION;
+  if (r.status === 'verified') verificationStatus = ResourceVerificationStatus.VERIFIED_LINK;
+  else if (r.status === 'broken') verificationStatus = ResourceVerificationStatus.UNAVAILABLE;
+
+  let resType = ResourceType.OTHER;
+  if (r.type === 'github_repo') resType = ResourceType.GITHUB_REPO;
+  else if (r.type === 'tool') resType = ResourceType.TOOL;
+  else if (r.type === 'website') resType = ResourceType.WEBSITE;
+  else if (r.type === 'documentation') resType = ResourceType.TUTORIAL;
+
+  return {
+    name: r.title,
+    url: r.url,
+    type: resType,
+    verificationStatus,
+    description: r.description,
+  };
 }
 
 /**
@@ -86,6 +135,38 @@ export async function createItem(req: Request, res: Response): Promise<void> {
         item.failureReason = report.rawEvidence.failureReason;
       }
       item.analyzedAt = report.retrievedAt;
+
+      // 3. Trigger text structuring and link verification if text is present
+      try {
+        const textToAnalyze = item.rawEvidence?.transcript || '';
+        const structResult = await activeStructuringService.structure({
+          title: item.title,
+          author: item.author,
+          platform: item.platform,
+          rawText: textToAnalyze,
+        });
+
+        // Verify discovered links with SSRF protection
+        const verifiedResources = await activeLinkVerifier.verifyResources(structResult.knowledge.resources);
+
+        if (structResult.knowledge.summary) item.summary = structResult.knowledge.summary;
+        if (structResult.knowledge.keyPoints.length > 0) item.keyPoints = structResult.knowledge.keyPoints;
+        if (structResult.knowledge.tags.length > 0) item.tags = structResult.knowledge.tags;
+        item.resources = verifiedResources.map(mapExtractedResource);
+        item.structuredAt = new Date();
+
+        // Promote to fully_analyzed if both metadata and transcript were structured
+        if (structResult.success && item.rawEvidence?.transcript) {
+          item.status = ProcessingStatus.FULLY_ANALYZED;
+        } else if (!structResult.success && structResult.errorCode && structResult.errorCode !== 'INSUFFICIENT_TEXT') {
+          item.failureReason = structResult.error || 'AI structuring failed';
+          if (item.status === ProcessingStatus.QUEUED) {
+            item.status = ProcessingStatus.PARTIALLY_ANALYZED;
+          }
+        }
+      } catch (aiErr: any) {
+        console.warn('[ItemController] Structuring step failed non-fatally:', aiErr.message);
+      }
 
       await item.save();
     } catch (retrievalErr: any) {
@@ -214,6 +295,71 @@ export async function deleteItem(req: Request, res: Response): Promise<void> {
     console.error('[ItemController] Error deleting item:', err);
     res.status(500).json({
       error: 'Failed to delete item.',
+      details: err.message,
+    });
+  }
+}
+
+/**
+ * POST /api/items/:id/analyze
+ * Triggers or re-runs AI text structuring and SSRF-guarded link verification on a saved item.
+ */
+export async function analyzeItem(req: Request, res: Response): Promise<void> {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+    res.status(400).json({ error: 'Invalid item ID format.' });
+    return;
+  }
+
+  try {
+    const item = await Item.findById(id);
+
+    if (!item) {
+      res.status(404).json({ error: 'Saved item not found.' });
+      return;
+    }
+
+    const textToAnalyze = item.rawEvidence?.transcript || '';
+    const structResult = await activeStructuringService.structure({
+      title: item.title,
+      author: item.author,
+      platform: item.platform,
+      rawText: textToAnalyze,
+    });
+
+    // Verify candidate URLs with SSRF protection
+    const verifiedResources = await activeLinkVerifier.verifyResources(structResult.knowledge.resources);
+
+    if (structResult.knowledge.summary) item.summary = structResult.knowledge.summary;
+    item.keyPoints = structResult.knowledge.keyPoints;
+    if (structResult.knowledge.tags.length > 0) item.tags = structResult.knowledge.tags;
+    item.resources = verifiedResources.map(mapExtractedResource);
+    item.structuredAt = new Date();
+
+    if (structResult.success && item.rawEvidence?.transcript) {
+      item.status = ProcessingStatus.FULLY_ANALYZED;
+      item.failureReason = undefined;
+    } else if (!structResult.success) {
+      item.failureReason = structResult.error || 'AI analysis could not complete';
+      if (structResult.errorCode === 'INSUFFICIENT_TEXT') {
+        item.status = item.title ? ProcessingStatus.METADATA_ONLY : ProcessingStatus.UNSUPPORTED_INACCESSIBLE;
+      } else {
+        item.status = ProcessingStatus.PARTIALLY_ANALYZED;
+      }
+    }
+
+    await item.save();
+
+    res.status(200).json({
+      message: 'Item analysis processed successfully.',
+      item,
+      structuringResult: structResult,
+    });
+  } catch (err: any) {
+    console.error('[ItemController] Error analyzing item:', err);
+    res.status(500).json({
+      error: 'An internal error occurred while analyzing the item.',
       details: err.message,
     });
   }

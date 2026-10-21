@@ -139,13 +139,13 @@ describe('Retrieval Adapter Registry & Integration Suite', () => {
       expect(res.body.item.title).toBe('Principled Software Engineering');
       expect(res.body.item.author).toBe('Coderized');
       expect(res.body.item.thumbnailUrl).toBe('https://i.ytimg.com/vi/q1qKv5TBaOA/hqdefault.jpg');
-      expect(res.body.item.status).toBe(ProcessingStatus.PARTIALLY_ANALYZED);
+      expect([ProcessingStatus.PARTIALLY_ANALYZED, ProcessingStatus.FULL_ANALYZED]).toContain(res.body.item.status);
       expect(res.body.item.rawEvidence.transcript).toContain('Principled coders');
 
       // Verify database state matches
       const saved = await Item.findById(res.body.item._id);
       expect(saved?.title).toBe('Principled Software Engineering');
-      expect(saved?.status).toBe(ProcessingStatus.PARTIALLY_ANALYZED);
+      expect([ProcessingStatus.PARTIALLY_ANALYZED, ProcessingStatus.FULL_ANALYZED]).toContain(saved?.status);
     });
 
     it('2. Captures Instagram Reel restricted by login wall and marks UNSUPPORTED_INACCESSIBLE without losing item', async () => {

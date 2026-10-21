@@ -1,4 +1,9 @@
+import path from 'path';
 import dotenv from 'dotenv';
+
+// Load .env from workspace root or server directory
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config();
 
 import { createApp } from './app';

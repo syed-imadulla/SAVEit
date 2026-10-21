@@ -9,6 +9,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 export enum ProcessingStatus {
   QUEUED = 'queued',
   FULL_ANALYZED = 'full_analyzed',
+  FULLY_ANALYZED = 'full_analyzed',
   PARTIALLY_ANALYZED = 'partially_analyzed',
   METADATA_ONLY = 'metadata_only',
   NEEDS_USER_INPUT = 'needs_user_input',
@@ -50,6 +51,7 @@ export interface IResource {
   url?: string;
   type: ResourceType;
   verificationStatus: ResourceVerificationStatus;
+  description?: string;
 }
 
 export interface IRawEvidence {
@@ -78,6 +80,7 @@ export interface IItem extends Document {
   failureReason?: string;
   capturedAt: Date;
   analyzedAt?: Date;
+  structuredAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -96,6 +99,7 @@ const ResourceSchema = new Schema<IResource>(
       enum: Object.values(ResourceVerificationStatus),
       default: ResourceVerificationStatus.UNVERIFIED_MENTION,
     },
+    description: { type: String, trim: true },
   },
   { _id: false }
 );
@@ -188,6 +192,9 @@ const ItemSchema = new Schema<IItem>(
       index: true,
     },
     analyzedAt: {
+      type: Date,
+    },
+    structuredAt: {
       type: Date,
     },
   },
