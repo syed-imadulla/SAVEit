@@ -39,7 +39,9 @@ describe('Item Storage and CRUD Integration', () => {
     expect(res.body.item).toBeDefined();
     expect(res.body.item.platform).toBe(Platform.YOUTUBE);
     expect(res.body.item.contentType).toBe(ContentType.SHORT);
-    expect(res.body.item.status).toBe(ProcessingStatus.QUEUED);
+    expect([ProcessingStatus.METADATA_ONLY, ProcessingStatus.PARTIALLY_ANALYZED, ProcessingStatus.QUEUED]).toContain(
+      res.body.item.status
+    );
     expect(res.body.item.normalizedUrl).toBe('https://www.youtube.com/shorts/dQw4w9WgXcQ');
 
     createdItemId = res.body.item._id;
@@ -75,7 +77,9 @@ describe('Item Storage and CRUD Integration', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.item._id).toBe(createdItemId);
-    expect(res.body.item.status).toBe(ProcessingStatus.QUEUED);
+    expect([ProcessingStatus.METADATA_ONLY, ProcessingStatus.PARTIALLY_ANALYZED, ProcessingStatus.QUEUED]).toContain(
+      res.body.item.status
+    );
   });
 
   it('DELETE /api/items/:id removes the item', async () => {

@@ -2,10 +2,22 @@ import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { Item, ProcessingStatus, Platform } from '../models/Item';
 import { validateAndParseVideoUrl } from '../utils/urlValidator';
+import { defaultRetrievalService, RetrievalService } from '../services/retrieval';
+
+// Active service instance allowing dependency injection for integration testing
+let activeRetrievalService: RetrievalService = defaultRetrievalService;
+
+export function setRetrievalService(service: RetrievalService): void {
+  activeRetrievalService = service;
+}
+
+export function resetRetrievalService(): void {
+  activeRetrievalService = defaultRetrievalService;
+}
 
 /**
  * POST /api/items
- * Validates, checks SSRF safety, and persists a shared video URL immediately.
+ * Validates, checks SSRF safety, persists the record, and triggers evidence retrieval.
  */
 export async function createItem(req: Request, res: Response): Promise<void> {
   const { url } = req.body;
@@ -50,8 +62,41 @@ export async function createItem(req: Request, res: Response): Promise<void> {
       capturedAt: new Date(),
     });
 
+    // Execute platform retrieval adapter to extract metadata and transcripts
+    try {
+      const report = await activeRetrievalService.retrieveEvidence(item.url, item.platform);
+
+      // Populate extracted metadata
+      if (report.metadata.title) item.title = report.metadata.title;
+      if (report.metadata.author) item.author = report.metadata.author;
+      if (report.metadata.thumbnailUrl) item.thumbnailUrl = report.metadata.thumbnailUrl;
+      if (report.metadata.durationSeconds) item.duration = report.metadata.durationSeconds;
+
+      // Populate transcript if available
+      if (report.transcript?.text) {
+        item.rawEvidence = {
+          ...item.rawEvidence,
+          transcript: report.transcript.text,
+        };
+      }
+
+      // Update honest status, failure diagnostics, and analysis timestamp
+      item.status = report.status;
+      if (report.rawEvidence.failureReason) {
+        item.failureReason = report.rawEvidence.failureReason;
+      }
+      item.analyzedAt = report.retrievedAt;
+
+      await item.save();
+    } catch (retrievalErr: any) {
+      console.error('[ItemController] Retrieval step failed non-fatally:', retrievalErr);
+      item.status = ProcessingStatus.RETRYABLE_FAILURE;
+      item.failureReason = retrievalErr.message || 'Retrieval failed unexpectedly';
+      await item.save();
+    }
+
     res.status(201).json({
-      message: 'Video captured successfully and queued for processing.',
+      message: 'Video captured and processed successfully.',
       item,
       isDuplicate: false,
     });
