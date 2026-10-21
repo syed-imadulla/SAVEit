@@ -1,0 +1,202 @@
+import mongoose, { Document, Schema } from 'mongoose';
+
+/**
+ * The 7 honest processing states of SAVEit.
+ *
+ * It is critical that we never claim a video was fully analyzed when only
+ * metadata was accessible, nor discard an item if processing failed.
+ */
+export enum ProcessingStatus {
+  QUEUED = 'queued',
+  FULL_ANALYZED = 'full_analyzed',
+  PARTIALLY_ANALYZED = 'partially_analyzed',
+  METADATA_ONLY = 'metadata_only',
+  NEEDS_USER_INPUT = 'needs_user_input',
+  RETRYABLE_FAILURE = 'retryable_failure',
+  UNSUPPORTED_INACCESSIBLE = 'unsupported_inaccessible',
+}
+
+export enum Platform {
+  INSTAGRAM = 'instagram',
+  YOUTUBE = 'youtube',
+}
+
+export enum ContentType {
+  REEL = 'reel',
+  SHORT = 'short',
+  UNKNOWN = 'unknown',
+}
+
+export enum ResourceType {
+  TOOL = 'tool',
+  WEBSITE = 'website',
+  GITHUB_REPO = 'github_repo',
+  TUTORIAL = 'tutorial',
+  API = 'api',
+  LIBRARY = 'library',
+  PRODUCT = 'product',
+  OTHER = 'other',
+}
+
+export enum ResourceVerificationStatus {
+  VERIFIED_LINK = 'verified_link',
+  UNVERIFIED_MENTION = 'unverified_mention',
+  UNAVAILABLE = 'unavailable',
+  NEEDS_REVIEW = 'needs_review',
+}
+
+export interface IResource {
+  name: string;
+  url?: string;
+  type: ResourceType;
+  verificationStatus: ResourceVerificationStatus;
+}
+
+export interface IRawEvidence {
+  transcript?: string;
+  captions?: string;
+  ocrText?: string;
+  notes?: string;
+}
+
+export interface IItem extends Document {
+  url: string;
+  normalizedUrl: string;
+  platform: Platform;
+  contentType: ContentType;
+  platformId?: string;
+  status: ProcessingStatus;
+  title?: string;
+  author?: string;
+  duration?: number;
+  thumbnailUrl?: string;
+  summary?: string;
+  keyPoints: string[];
+  tags: string[];
+  resources: IResource[];
+  rawEvidence?: IRawEvidence;
+  failureReason?: string;
+  capturedAt: Date;
+  analyzedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const ResourceSchema = new Schema<IResource>(
+  {
+    name: { type: String, required: true, trim: true },
+    url: { type: String, trim: true },
+    type: {
+      type: String,
+      enum: Object.values(ResourceType),
+      default: ResourceType.OTHER,
+    },
+    verificationStatus: {
+      type: String,
+      enum: Object.values(ResourceVerificationStatus),
+      default: ResourceVerificationStatus.UNVERIFIED_MENTION,
+    },
+  },
+  { _id: false }
+);
+
+const RawEvidenceSchema = new Schema<IRawEvidence>(
+  {
+    transcript: { type: String },
+    captions: { type: String },
+    ocrText: { type: String },
+    notes: { type: String },
+  },
+  { _id: false }
+);
+
+const ItemSchema = new Schema<IItem>(
+  {
+    url: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    normalizedUrl: {
+      type: String,
+      required: true,
+      trim: true,
+      index: true,
+    },
+    platform: {
+      type: String,
+      enum: Object.values(Platform),
+      required: true,
+      index: true,
+    },
+    contentType: {
+      type: String,
+      enum: Object.values(ContentType),
+      default: ContentType.UNKNOWN,
+    },
+    platformId: {
+      type: String,
+      trim: true,
+    },
+    status: {
+      type: String,
+      enum: Object.values(ProcessingStatus),
+      default: ProcessingStatus.QUEUED,
+      required: true,
+      index: true,
+    },
+    title: {
+      type: String,
+      trim: true,
+    },
+    author: {
+      type: String,
+      trim: true,
+    },
+    duration: {
+      type: Number,
+    },
+    thumbnailUrl: {
+      type: String,
+      trim: true,
+    },
+    summary: {
+      type: String,
+    },
+    keyPoints: {
+      type: [String],
+      default: [],
+    },
+    tags: {
+      type: [String],
+      default: [],
+      index: true,
+    },
+    resources: {
+      type: [ResourceSchema],
+      default: [],
+    },
+    rawEvidence: {
+      type: RawEvidenceSchema,
+    },
+    failureReason: {
+      type: String,
+    },
+    capturedAt: {
+      type: Date,
+      default: Date.now,
+      index: true,
+    },
+    analyzedAt: {
+      type: Date,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+// Compound index for efficient user library feed queries sorted by capture date
+ItemSchema.index({ status: 1, capturedAt: -1 });
+
+export const Item = mongoose.model<IItem>('Item', ItemSchema);
