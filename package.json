@@ -16,7 +16,8 @@
     "lint": "npm run lint --workspaces --if-present",
     "db:up": "docker compose up -d mongodb",
     "db:down": "docker compose down",
-    "db:logs": "docker compose logs -f mongodb"
+    "db:logs": "docker compose logs -f mongodb",
+    "graphify": "graphify extract . --code-only && graphify cluster-only ."
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
