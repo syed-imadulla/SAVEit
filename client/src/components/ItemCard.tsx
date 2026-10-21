@@ -11,9 +11,10 @@ import { StatusBadge } from './StatusBadge';
 interface ItemCardProps {
   item: SavedItem;
   onDelete: (id: string) => Promise<void>;
+  onSelect?: (item: SavedItem) => void;
 }
 
-export const ItemCard: React.FC<ItemCardProps> = ({ item, onDelete }) => {
+export const ItemCard: React.FC<ItemCardProps> = ({ item, onDelete, onSelect }) => {
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -54,7 +55,20 @@ export const ItemCard: React.FC<ItemCardProps> = ({ item, onDelete }) => {
   };
 
   return (
-    <div className="glass-panel glass-panel-hover rounded-2xl p-5 flex flex-col justify-between border border-white/[0.08] relative group overflow-hidden">
+    <div
+      onClick={() => onSelect?.(item)}
+      role={onSelect ? 'button' : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      onKeyDown={(e) => {
+        if (onSelect && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          onSelect(item);
+        }
+      }}
+      className={`glass-panel glass-panel-hover rounded-2xl p-5 flex flex-col justify-between border border-white/[0.08] relative group overflow-hidden ${
+        onSelect ? 'cursor-pointer' : ''
+      }`}
+    >
       {/* Platform & Status Header */}
       <div>
         <div className="flex items-center justify-between gap-2 mb-3">
@@ -103,12 +117,13 @@ export const ItemCard: React.FC<ItemCardProps> = ({ item, onDelete }) => {
         </div>
 
         {/* Action Links */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           {/* External Source Link */}
           <a
             href={item.url}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800/80 transition-colors flex items-center gap-1"
             title="Open original video source"
           >
@@ -118,10 +133,16 @@ export const ItemCard: React.FC<ItemCardProps> = ({ item, onDelete }) => {
 
           {/* Delete Action with Inline Confirmation */}
           {isConfirmingDelete ? (
-            <div className="flex items-center gap-1 bg-slate-900 border border-rose-500/40 rounded-lg p-0.5 animate-fadeIn">
+            <div
+              className="flex items-center gap-1 bg-slate-900 border border-rose-500/40 rounded-lg p-0.5 animate-fadeIn"
+              onClick={(e) => e.stopPropagation()}
+            >
               <button
                 type="button"
-                onClick={handleDelete}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDelete();
+                }}
                 disabled={isDeleting}
                 className="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded text-[11px] font-medium transition-colors flex items-center gap-1"
               >
@@ -129,7 +150,10 @@ export const ItemCard: React.FC<ItemCardProps> = ({ item, onDelete }) => {
               </button>
               <button
                 type="button"
-                onClick={() => setIsConfirmingDelete(false)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsConfirmingDelete(false);
+                }}
                 disabled={isDeleting}
                 className="px-1.5 py-1 text-slate-400 hover:text-slate-200 text-[11px]"
               >
@@ -139,7 +163,10 @@ export const ItemCard: React.FC<ItemCardProps> = ({ item, onDelete }) => {
           ) : (
             <button
               type="button"
-              onClick={() => setIsConfirmingDelete(true)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsConfirmingDelete(true);
+              }}
               className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
               title="Delete item"
             >

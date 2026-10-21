@@ -1,12 +1,12 @@
 ---
 gsd_state_version: '1.0'
-status: ready_for_review
+status: phase_completed
 progress:
   total_phases: 7
-  completed_phases: 4
-  total_plans: 13
-  completed_plans: 11
-  percent: 85
+  completed_phases: 5
+  total_plans: 16
+  completed_plans: 14
+  percent: 88
 ---
 
 # Project State
@@ -16,16 +16,16 @@ progress:
 See: [.planning/PROJECT.md](file:///home/syed-imadulla/Desktop/SAVEit/.planning/PROJECT.md) (updated 2026-10-21)
 
 **Core value:** Turn saved short-form videos into dependable, searchable knowledge items while preserving the original source and honestly presenting what content was legitimately accessible.
-**Current focus:** Phase 4: Multimodal Analysis (STT & OCR) — Completed Plan 04-03 Multimodal Pipeline Integration & Evidence Attribution
+**Current focus:** Phase 5: Search & Knowledge Discovery — Completed Plan 05-03 Item Detail View & Evidence Inspector (Phase 5 Complete)
 
 ## Current Position
 
-Phase: 4 of 7 (Multimodal Analysis — STT & OCR)
-Plan: 3 of 3 completed (Plan 04-01, Plan 04-02, and Plan 04-03 completed; Phase 4 complete)
-Status: Completed Plan 04-03 Multimodal Pipeline Integration & Evidence Attribution. All 132 tests passing across 15 test suites. Monorepo build clean. Graphify refreshed to 510 nodes and 1103 edges.
-Last activity: 2026-10-21 — Completed Plan 04-03 Multimodal Pipeline Integration & Evidence Attribution.
+Phase: 5 of 7 (Search & Knowledge Discovery) — COMPLETED
+Plan: 3 of 3 complete (05-01 Search Backend, 05-02 Search UI, 05-03 Detail View & Evidence Inspector)
+Status: Phase 5 is fully executed and verified. The Item Detail View and Evidence Inspector modal displays rich technical summaries, key takeaways, verified resource badges, and multi-tabbed raw evidence (grounding attributions, spoken transcript, visual OCR, diagnostics). Re-analysis with duplicate-click protection and state refresh in place is integrated into the library feed. All 173 tests pass (153 server, 20 client), production builds succeed cleanly, and Graphify knowledge graph is refreshed.
+Last activity: 2026-10-21 — Completed Plan 05-03 (Item Detail View & Evidence Inspector).
 
-Progress: [█████████░] 85% of total roadmap (Phase 4 complete; ready for Phase 5)
+Progress: [█████████░] 88% of total roadmap (Phase 5 complete, ready for Phase 6)
 
 ## Performance Metrics
 
@@ -60,3 +60,5 @@ Progress: [█████████░] 85% of total roadmap (Phase 4 complet
 - Implemented grounded evidence attribution connecting takeaways and resources to verifiable transcript seconds and OCR milliseconds with verbatim excerpts.
 - Enforced zero-hallucination constraint: takeaways and tools lacking legitimate observed evidence remain explicitly ungrounded without fake timestamps.
 - Built non-destructive multimodal analysis pipeline preserving previously saved metadata and raw evidence across re-analysis.
+- Built accessible Item Detail View and Evidence Inspector modal with 4 evidence inspection tabs, verified resource badge styling, safe external link attributes (`rel="noopener noreferrer"`), and Escape/backdrop dismissal.
+- Implemented state-preserving re-analysis flow (`POST /api/items/:id/analyze`) with duplicate-click protection, loading spinners, quota error feedback, and in-place library item refresh.

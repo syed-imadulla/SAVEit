@@ -74,7 +74,10 @@ Plans:
 **Success Criteria**:
   1. Search bar finds videos by mentioned tools (e.g. "Docker", "FastAPI"), topics, or summaries even if title is forgotten.
   2. Rich detail view reveals the structured breakdown, key takeaways, and verified links.
-**Plans**: TBD
+**Plans**: 3 plans
+- [x] 05-01: Full-Text Search & Multi-Criteria Filtering Backend (completed 2026-10-21)
+- [x] 05-02: Search & Discovery UI Componentry (completed 2026-10-21)
+- [x] 05-03: Rich Item Detail View & Evidence Inspector (completed 2026-10-21)
 
 ### Phase 6: Background Processing & Queues
 **Goal**: Scale analysis asynchronously using Redis and BullMQ, handling long-running extraction jobs resiliently.

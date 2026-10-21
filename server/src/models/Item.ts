@@ -288,5 +288,33 @@ const ItemSchema = new Schema<IItem>(
 
 // Compound index for efficient user library feed queries sorted by capture date
 ItemSchema.index({ status: 1, capturedAt: -1 });
+ItemSchema.index({ platform: 1, capturedAt: -1 });
+ItemSchema.index({ status: 1, platform: 1, capturedAt: -1 });
+ItemSchema.index({ contentType: 1, capturedAt: -1 });
+ItemSchema.index({ tags: 1, capturedAt: -1 });
+
+// Weighted text search index for fast full-text relevance queries
+ItemSchema.index(
+  {
+    title: 'text',
+    tags: 'text',
+    'resources.name': 'text',
+    summary: 'text',
+    keyPoints: 'text',
+    'rawEvidence.ocrText': 'text',
+  },
+  {
+    weights: {
+      title: 10,
+      tags: 8,
+      'resources.name': 6,
+      summary: 4,
+      keyPoints: 3,
+      'rawEvidence.ocrText': 2,
+    },
+    name: 'item_text_search_index',
+    default_language: 'english',
+  }
+);
 
 export const Item = mongoose.model<IItem>('Item', ItemSchema);

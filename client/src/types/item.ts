@@ -27,18 +27,52 @@ export type ResourceVerificationStatus =
   | 'unavailable'
   | 'needs_review';
 
+export interface IEvidenceReference {
+  targetType: 'keyPoint' | 'resource';
+  targetIndex: number;
+  targetText?: string;
+  sourceType: 'transcript' | 'ocr' | 'metadata';
+  timestampMs?: number;
+  timestampSeconds?: number;
+  excerpt: string;
+  frameIndex?: number;
+}
+
+export interface ITranscriptSegment {
+  start: number;
+  duration: number;
+  text: string;
+}
+
+export interface IOcrObservation {
+  frameIndex: number;
+  timestampMs: number;
+  rawText: string;
+  codeSnippets?: string[];
+  terminalCommands?: string[];
+  urls?: string[];
+  toolMentions?: string[];
+  confidenceScore?: number;
+}
+
 export interface IResource {
   name: string;
   url?: string;
   type: ResourceType;
   verificationStatus: ResourceVerificationStatus;
+  description?: string;
+  evidence?: IEvidenceReference;
 }
 
 export interface IRawEvidence {
   transcript?: string;
+  transcriptSegments?: ITranscriptSegment[];
   captions?: string;
   ocrText?: string;
+  ocrObservations?: IOcrObservation[];
+  evidenceAttributions?: IEvidenceReference[];
   notes?: string;
+  failureReason?: string;
 }
 
 export interface SavedItem {
@@ -85,4 +119,29 @@ export interface HealthResponse {
   timestamp: string;
   uptime: number;
   database: 'connected' | 'disconnected';
+}
+
+export interface TagCount {
+  tag: string;
+  count: number;
+}
+
+export interface TagsResponse {
+  tags: TagCount[];
+  total: number;
+}
+
+export type SortByOption = 'capturedAt' | 'analyzedAt' | 'relevance';
+export type SortOrderOption = 'asc' | 'desc';
+
+export interface FetchItemsParams {
+  q?: string;
+  tag?: string;
+  platform?: string;
+  status?: string;
+  contentType?: string;
+  sortBy?: SortByOption;
+  sortOrder?: SortOrderOption;
+  page?: number;
+  limit?: number;
 }

@@ -3,6 +3,8 @@ import {
   ItemsResponse,
   CaptureItemResponse,
   HealthResponse,
+  FetchItemsParams,
+  TagsResponse,
 } from '../types/item';
 
 const API_BASE = '/api';
@@ -42,24 +44,35 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 /**
- * Fetches saved items with optional status/platform filters and pagination.
+ * Fetches saved items with search query, filters, sorting, and pagination.
  */
-export async function fetchItems(params?: {
-  status?: string;
-  platform?: string;
-  page?: number;
-  limit?: number;
-}): Promise<ItemsResponse> {
+export async function fetchItems(
+  params?: FetchItemsParams,
+  signal?: AbortSignal
+): Promise<ItemsResponse> {
   const query = new URLSearchParams();
 
+  if (params?.q?.trim()) query.set('q', params.q.trim());
+  if (params?.tag?.trim()) query.set('tag', params.tag.trim());
   if (params?.status) query.set('status', params.status);
   if (params?.platform) query.set('platform', params.platform);
+  if (params?.contentType) query.set('contentType', params.contentType);
+  if (params?.sortBy) query.set('sortBy', params.sortBy);
+  if (params?.sortOrder) query.set('sortOrder', params.sortOrder);
   if (params?.page) query.set('page', String(params.page));
   if (params?.limit) query.set('limit', String(params.limit));
 
   const url = `${API_BASE}/items${query.toString() ? `?${query.toString()}` : ''}`;
-  const res = await fetch(url);
+  const res = await fetch(url, { signal });
   return handleResponse<ItemsResponse>(res);
+}
+
+/**
+ * Fetches unique normalized tags and their usage counts for discovery.
+ */
+export async function fetchTags(signal?: AbortSignal): Promise<TagsResponse> {
+  const res = await fetch(`${API_BASE}/tags`, { signal });
+  return handleResponse<TagsResponse>(res);
 }
 
 /**
@@ -92,6 +105,18 @@ export async function deleteItem(id: string): Promise<{ success: boolean; messag
   });
 
   return handleResponse<{ success: boolean; message: string }>(res);
+}
+
+/**
+ * Triggers or re-runs AI text structuring and multimodal grounding on a saved item.
+ */
+export async function reanalyzeItem(id: string): Promise<{ message: string; item: SavedItem }> {
+  const res = await fetch(`${API_BASE}/items/${id}/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  return handleResponse<{ message: string; item: SavedItem }>(res);
 }
 
 /**

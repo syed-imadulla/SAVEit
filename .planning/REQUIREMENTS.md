@@ -38,16 +38,16 @@ Requirements for initial release, broken down into roadmap phases.
 
 ### Phase 4: Multimodal Analysis (STT & OCR)
 
-- [ ] **MM-01**: Speech-to-text benchmark and integration for accessible media audio with timestamp preservation.
-- [ ] **MM-02**: Frame sampler selecting informative keyframes from accessible video streams.
-- [ ] **MM-03**: OCR engine reading on-screen code snippets, terminal commands, and visible URLs from sampled frames.
-- [ ] **MM-04**: Evidence attribution linking extracted knowledge to transcript or OCR timestamps.
+- [x] **MM-01**: Speech-to-text benchmark and integration for accessible media audio with timestamp preservation.
+- [x] **MM-02**: Frame sampler selecting informative keyframes from accessible video streams.
+- [x] **MM-03**: OCR engine reading on-screen code snippets, terminal commands, and visible URLs from sampled frames.
+- [x] **MM-04**: Evidence attribution linking extracted knowledge to transcript or OCR timestamps.
 
 ### Phase 5: Search & Knowledge Discovery
 
-- [ ] **SCH-01**: Full-text search endpoint querying summaries, tags, titles, and extracted resources.
-- [ ] **SCH-02**: Search UI bar supporting natural search queries and category/platform filtering.
-- [ ] **SCH-03**: Dedicated Item Detail View showing structured knowledge, verified links, and raw evidence inspection.
+- [x] **SCH-01**: Full-text search endpoint querying summaries, tags, titles, and extracted resources.
+- [x] **SCH-02**: Search UI bar supporting natural search queries and category/platform filtering.
+- [x] **SCH-03**: Dedicated Item Detail View showing structured knowledge, verified links, and raw evidence inspection.
 
 ### Phase 6: Background Processing & Queuing
 

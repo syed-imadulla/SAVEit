@@ -1,6 +1,7 @@
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import itemRoutes from './routes/itemRoutes';
+import { getTags } from './controllers/itemController';
 import { isDatabaseConnected } from './config/db';
 
 export function createApp(): Application {
@@ -26,6 +27,7 @@ export function createApp(): Application {
   });
 
   // API Routes
+  app.get('/api/tags', getTags);
   app.use('/api/items', itemRoutes);
 
   // 404 handler for unknown routes

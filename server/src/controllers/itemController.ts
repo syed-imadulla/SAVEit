@@ -4,6 +4,7 @@ import {
   Item,
   ProcessingStatus,
   Platform,
+  ContentType,
   IResource,
   ResourceType,
   ResourceVerificationStatus,
@@ -264,30 +265,273 @@ export async function createItem(req: Request, res: Response): Promise<void> {
 }
 
 /**
+ * Safely escapes regular expression special characters to prevent ReDoS and regex injection.
+ */
+export function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
  * GET /api/items
- * Retrieves saved items with pagination and optional status/platform filtering.
+ * Retrieves saved items with pagination, multi-criteria filtering, full-text/partial search, and sorting.
  */
 export async function getItems(req: Request, res: Response): Promise<void> {
   try {
-    const { status, platform, page = '1', limit = '20' } = req.query;
+    const {
+      status,
+      platform,
+      contentType,
+      tag,
+      q,
+      sortBy = 'capturedAt',
+      sortOrder = 'desc',
+      page = '1',
+      limit = '20',
+    } = req.query;
 
     const query: Record<string, any> = {};
 
-    if (status && typeof status === 'string' && Object.values(ProcessingStatus).includes(status as any)) {
-      query.status = status;
+    // 1. Status filter (supporting both 'full_analyzed' and alias 'fully_analyzed')
+    if (status && typeof status === 'string') {
+      const normalizedStatus = status === 'fully_analyzed' ? ProcessingStatus.FULL_ANALYZED : status;
+      if (Object.values(ProcessingStatus).includes(normalizedStatus as any)) {
+        query.status = normalizedStatus;
+      }
     }
 
+    // 2. Platform filter
     if (platform && typeof platform === 'string' && Object.values(Platform).includes(platform as any)) {
       query.platform = platform;
     }
 
-    const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string, 10) || 20));
+    // 3. ContentType filter
+    if (contentType && typeof contentType === 'string' && Object.values(ContentType).includes(contentType as any)) {
+      query.contentType = contentType;
+    }
+
+    // 4. Exact Tag filter (case-insensitive)
+    if (tag && typeof tag === 'string') {
+      const cleanTag = tag.trim();
+      if (cleanTag) {
+        query.tags = { $regex: new RegExp(`^${escapeRegex(cleanTag)}$`, 'i') };
+      }
+    }
+
+    // 5. Pagination bounds (defaults to page=1, limit=20 if invalid or <= 0, limit capped at 100)
+    const parsedPage = parseInt(page as string, 10);
+    const pageNum = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
+
+    const parsedLimit = parseInt(limit as string, 10);
+    const limitNum = Number.isInteger(parsedLimit) && parsedLimit >= 1
+      ? Math.min(100, parsedLimit)
+      : 20;
+
     const skip = (pageNum - 1) * limitNum;
+
+    // 6. Sorting configuration
+    const sortDir = sortOrder === 'asc' ? 1 : -1;
+    const requestedSortBy = typeof sortBy === 'string' ? sortBy.toLowerCase() : 'capturedat';
+
+    // 7. Full-text and partial substring search
+    const rawSearchQuery = typeof q === 'string' ? q.trim().slice(0, 200) : '';
+
+    if (rawSearchQuery) {
+      const escaped = escapeRegex(rawSearchQuery);
+      const searchRegex = new RegExp(escaped, 'i');
+
+      const regexOrClause = [
+        { title: searchRegex },
+        { summary: searchRegex },
+        { keyPoints: searchRegex },
+        { tags: searchRegex },
+        { 'resources.name': searchRegex },
+        { 'resources.description': searchRegex },
+        { 'rawEvidence.ocrText': searchRegex },
+        { 'rawEvidence.transcript': searchRegex },
+      ];
+
+      const partialMatchFilter = {
+        ...query,
+        $or: regexOrClause,
+      };
+
+      // Relevance sort requested
+      if (requestedSortBy === 'relevance') {
+        // Attempt native MongoDB text search when appropriate
+        let canUseNativeText = false;
+        let textFilter: Record<string, any> = {};
+
+        try {
+          textFilter = {
+            ...query,
+            $text: { $search: rawSearchQuery },
+          };
+          const textCount = await Item.countDocuments(textFilter);
+          const partialCount = await Item.countDocuments(partialMatchFilter);
+
+          // If text search covers all matches (not missing partial substring matches)
+          if (textCount > 0 && textCount >= partialCount) {
+            canUseNativeText = true;
+          }
+        } catch {
+          // If $text fails or throws (e.g. syntax/stopword), safely fall back to partial search
+          canUseNativeText = false;
+        }
+
+        if (canUseNativeText) {
+          const [items, total] = await Promise.all([
+            Item.find(textFilter, { score: { $meta: 'textScore' } })
+              .sort({ score: { $meta: 'textScore' }, capturedAt: sortDir })
+              .skip(skip)
+              .limit(limitNum)
+              .lean(),
+            Item.countDocuments(textFilter),
+          ]);
+
+          res.status(200).json({
+            items,
+            total,
+            page: pageNum,
+            limit: limitNum,
+            totalPages: Math.ceil(total / limitNum) || 1,
+          });
+          return;
+        }
+
+        // Safe partial-match fallback with field weight scoring in MongoDB aggregation
+        const pipeline: any[] = [
+          { $match: partialMatchFilter },
+          {
+            $addFields: {
+              relevanceScore: {
+                $add: [
+                  { $cond: [{ $regexMatch: { input: { $ifNull: ['$title', ''] }, regex: escaped, options: 'i' } }, 10, 0] },
+                  { $cond: [{ $regexMatch: { input: { $ifNull: ['$summary', ''] }, regex: escaped, options: 'i' } }, 4, 0] },
+                  {
+                    $cond: [
+                      {
+                        $regexMatch: {
+                          input: {
+                            $reduce: {
+                              input: { $ifNull: ['$keyPoints', []] },
+                              initialValue: '',
+                              in: { $concat: ['$$value', ' ', '$$this'] },
+                            },
+                          },
+                          regex: escaped,
+                          options: 'i',
+                        },
+                      },
+                      3,
+                      0,
+                    ],
+                  },
+                  {
+                    $cond: [
+                      {
+                        $regexMatch: {
+                          input: {
+                            $reduce: {
+                              input: { $ifNull: ['$tags', []] },
+                              initialValue: '',
+                              in: { $concat: ['$$value', ' ', '$$this'] },
+                            },
+                          },
+                          regex: escaped,
+                          options: 'i',
+                        },
+                      },
+                      8,
+                      0,
+                    ],
+                  },
+                  {
+                    $cond: [
+                      {
+                        $regexMatch: {
+                          input: {
+                            $reduce: {
+                              input: { $ifNull: ['$resources.name', []] },
+                              initialValue: '',
+                              in: { $concat: ['$$value', ' ', '$$this'] },
+                            },
+                          },
+                          regex: escaped,
+                          options: 'i',
+                        },
+                      },
+                      6,
+                      0,
+                    ],
+                  },
+                  { $cond: [{ $regexMatch: { input: { $ifNull: ['$rawEvidence.ocrText', ''] }, regex: escaped, options: 'i' } }, 2, 0] },
+                  { $cond: [{ $regexMatch: { input: { $ifNull: ['$rawEvidence.transcript', ''] }, regex: escaped, options: 'i' } }, 2, 0] },
+                ],
+              },
+            },
+          },
+          {
+            $facet: {
+              metadata: [{ $count: 'total' }],
+              items: [
+                { $sort: { relevanceScore: sortDir, capturedAt: -1 } },
+                { $skip: skip },
+                { $limit: limitNum },
+              ],
+            },
+          },
+        ];
+
+        const [aggResult] = await Item.aggregate(pipeline);
+        const total = aggResult?.metadata[0]?.total || 0;
+        const items = aggResult?.items || [];
+
+        res.status(200).json({
+          items,
+          total,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(total / limitNum) || 1,
+        });
+        return;
+      }
+
+      // If sortBy is not relevance, use partialMatchFilter with standard sort field
+      const sortField = requestedSortBy === 'analyzedat' ? 'analyzedAt' : 'capturedAt';
+      const sortObj: Record<string, any> = { [sortField]: sortDir };
+      if (sortField !== 'capturedAt') {
+        sortObj.capturedAt = -1;
+      }
+
+      const [items, total] = await Promise.all([
+        Item.find(partialMatchFilter)
+          .sort(sortObj)
+          .skip(skip)
+          .limit(limitNum)
+          .lean(),
+        Item.countDocuments(partialMatchFilter),
+      ]);
+
+      res.status(200).json({
+        items,
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum) || 1,
+      });
+      return;
+    }
+
+    // No search query provided
+    const sortField = requestedSortBy === 'analyzedat' ? 'analyzedAt' : 'capturedAt';
+    const sortObj: Record<string, any> = { [sortField]: sortDir };
+    if (sortField !== 'capturedAt') {
+      sortObj.capturedAt = -1;
+    }
 
     const [items, total] = await Promise.all([
       Item.find(query)
-        .sort({ capturedAt: -1 })
+        .sort(sortObj)
         .skip(skip)
         .limit(limitNum)
         .lean(),
@@ -305,6 +549,49 @@ export async function getItems(req: Request, res: Response): Promise<void> {
     console.error('[ItemController] Error fetching items:', err);
     res.status(500).json({
       error: 'Failed to retrieve saved items.',
+      details: err.message,
+    });
+  }
+}
+
+/**
+ * GET /api/tags
+ * Returns unique normalized tags and their usage counts across all saved items.
+ */
+export async function getTags(req: Request, res: Response): Promise<void> {
+  try {
+    const tags = await Item.aggregate([
+      { $unwind: '$tags' },
+      {
+        $project: {
+          tag: { $toLower: { $trim: { input: '$tags' } } },
+        },
+      },
+      { $match: { tag: { $ne: '' } } },
+      {
+        $group: {
+          _id: '$tag',
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          tag: '$_id',
+          count: 1,
+        },
+      },
+      { $sort: { count: -1, tag: 1 } },
+    ]);
+
+    res.status(200).json({
+      tags,
+      total: tags.length,
+    });
+  } catch (err: any) {
+    console.error('[ItemController] Error fetching tags:', err);
+    res.status(500).json({
+      error: 'Failed to retrieve tags.',
       details: err.message,
     });
   }

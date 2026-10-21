@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   createItem,
   getItems,
+  getTags,
   getItemById,
   deleteItem,
   analyzeItem,
@@ -12,8 +13,11 @@ const router = Router();
 // POST /api/items — Capture a shared video URL
 router.post('/', createItem);
 
-// GET /api/items — List saved items with filters
+// GET /api/items — List saved items with filters and search
 router.get('/', getItems);
+
+// GET /api/items/tags — List unique tags and usage counts
+router.get('/tags', getTags);
 
 // GET /api/items/:id — Get a single saved item
 router.get('/:id', getItemById);
